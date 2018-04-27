@@ -1,0 +1,24 @@
+<Driver Description="Describe the purpose of your CloudShell shell" MainClass="driver.F5BigIpLoadbalancerShell2GDriver" Name="F5BigIpLoadbalancerShell2GDriver" Version="1.0.0">
+    <Layout>
+        <Category Name="Hidden Commands">
+            <Command Name="run_custom_config_command" DisplayName="run_custom_config_command"
+                     Description="Executes any custom config command entered in the input on the device." Tags="">
+                <Parameters>
+                    <Parameter Name="custom_command" Type="String" Mandatory="True" DisplayName="Custom Command"
+                               DefaultValue=""
+                               Description="The command(s) to run. Supports several commands separated by ';' symbol. Note that commands that require a response are not supported."/>
+                </Parameters>
+            </Command>
+        </Category>
+        <Command Name="health_check" Tags="" DisplayName="Health Check"
+                 Description="Performs checks on the device that validates that the Shell can work. In a networking device this checks usually include connectivity check for the protocols used by the Shell. The healtcheck result will be visible in the resource live status and command output."/>
+
+        <Command Name="run_custom_command" DisplayName="Run Custom Command" Tags=""
+                 Description="Executes any custom command entered in the input on the device.">
+            <Parameters>
+                <Parameter Name="custom_command" Type="String" Mandatory="True" DisplayName="Command" DefaultValue=""
+                           Description="The command(s) to run. Supports several commands separated by ';' symbol. Note that commands that require a response are not supported."/>
+            </Parameters>
+        </Command>
+    </Layout>
+</Driver>
