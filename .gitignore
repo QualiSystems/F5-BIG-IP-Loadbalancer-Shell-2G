@@ -58,3 +58,5 @@ docs/_build/
 # PyBuilder
 target/
 cloudshell_config.yml
+/src/test_f5.py
+/F5BigIpLoadbalancerShell2GDriver.zip
