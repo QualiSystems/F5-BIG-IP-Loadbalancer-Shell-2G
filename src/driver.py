@@ -302,3 +302,53 @@ class F5BigIpLoadbalancerShell2GDriver(ResourceDriverInterface):
         state_operations = StateRunner(logger=logger, api=api, resource_config=resource_config, cli_handler=cli_handler)
 
         return state_operations.shutdown()
+
+
+if __name__ == "__main__":
+    import mock
+    from cloudshell.shell.core.driver_context import ResourceCommandContext, ResourceContextDetails, ReservationContextDetails
+
+    address = "192.168.73.149"
+    user = "root"
+    password = "admin"
+    cs_address = "192.168.85.44"
+
+    auth_key = 'h8WRxvHoWkmH8rLQz+Z/pg=='
+    api_port = 8029
+
+    context = ResourceCommandContext(*(None, ) * 4)
+    context.resource = ResourceContextDetails(*(None, ) * 13)
+    context.resource.name = 'F5 BIG-IP Firewall 2G'
+    context.resource.fullname = 'F5 BIG-IP Firewall 2G'
+    context.reservation = ReservationContextDetails(*(None, ) * 7)
+    context.reservation.reservation_id = '0cc17f8c-75ba-495f-aeb5-df5f0f9a0e97'
+    context.resource.attributes = {}
+    context.resource.address = address
+    context.resource.family = "CS_LoadBalancer"
+
+
+    for attr, val in [("User", user),
+                      ("Password", password),
+                      ("Sessions Concurrency Limit", 1),
+                      ("SNMP Read Community", "public"),
+                      ("SNMP Version", "2"),
+                      ("Enable SNMP", "False"),
+                      ("Disable SNMP", "False"),
+                      ("CLI Connection Type", "ssh")]:
+
+        context.resource.attributes['{}.{}'.format(F5BigIpLoadbalancerShell2GDriver.SHELL_NAME, attr)] = val
+
+    context.connectivity = mock.MagicMock()
+    context.connectivity.server_address = cs_address
+
+    dr = F5BigIpLoadbalancerShell2GDriver()
+    dr.initialize(context)
+
+    with mock.patch('__main__.get_api') as get_api:
+        get_api.return_value = type('api', (object,), {
+            'DecryptPassword': lambda self, pw: type('Password', (object,), {'Value': pw})()})()
+
+        result = dr.get_inventory(context=context)
+
+        for res in result.resources:
+            print res.__dict__
