@@ -63,7 +63,6 @@ class F5GenericSNMPAutoload(object):
         self.snmp_handler.load_mib(["F5-BIGIP-SYSTEM-MIB"])
         self._get_device_details()
         self._get_server_farms()
-        self._get_real_servers()
         self._get_chassis_attributes()
         self._get_power_ports()
         self._get_ports()
@@ -236,8 +235,11 @@ class F5GenericSNMPAutoload(object):
         server_pools_algorithm_names = self.snmp_handler.get_table("F5-BIGIP-LOCAL-MIB", "ltmPoolName")
         server_pools_members = self.snmp_handler.get_table("F5-BIGIP-LOCAL-MIB", "ltmPoolMemberStatNodeName")
         servers_names = self.snmp_handler.get_table("F5-BIGIP-LOCAL-MIB", "ltmNodeAddrName")
+        servers_addresses = self.snmp_handler.get_table("F5-BIGIP-LOCAL-MIB", "ltmNodeAddrAddr")
+        servers_addresses_type = self.snmp_handler.get_table("F5-BIGIP-LOCAL-MIB", "ltmNodeAddrAddrType")
+        servers_monitors = self.snmp_handler.get_table("F5-BIGIP-LOCAL-MIB", "ltmNodeAddrAddrType")
 
-        for idx, (farm_id, farm_value) in enumerate(server_farms_names.iteritems()):
+        for farm_idx, (farm_id, farm_value) in enumerate(server_farms_names.items()):
             server_farm_name = farm_value.get("ltmVirtualServName")
             if not server_farm_name:
                 continue
@@ -245,43 +247,39 @@ class F5GenericSNMPAutoload(object):
             server_farm_pool = server_farms_pools.get(farm_id, {}).get("ltmVirtualServDefaultPool")
             server_farm = GenericServerFarm(shell_name=self.shell_name,
                                             name="Server Farm {}".format(server_farm_name.strip("/").replace("/", "_")),
-                                            unique_id="{}.{}.{}".format(self.resource_name, "server_farm", idx))
+                                            unique_id="{}.{}.{}".format(self.resource_name, "server_farm", farm_idx))
             server_farm.virtual_server_address = self._get_ip_address(server_farms_addresses.get(farm_id, {}).get(
                 "ltmVirtualServAddr"), server_farms_addresses_type.get(farm_id, {}).get("ltmVirtualServAddrType"))
             server_farm.virtual_server_port = server_farm_port
             server_farm.algorithm = ""
-            self.resource.add_sub_resource("1", server_farm)
+            self.resource.add_sub_resource(farm_idx, server_farm)
+
             if not server_farm_pool:
                 continue
-            for servers_pool_id, servers_pool_value in servers_pools.iteritems():
-                if server_farm_pool in servers_pool_value.get("ltmPoolMemberPoolName", ""):
+
+            # todo: rework this with one iteration, not for each server farm
+            for server_idx, (servers_pool_id, servers_pool_value) in enumerate(servers_pools.iteritems()):
+                if server_farm_pool == servers_pool_value.get("ltmPoolMemberPoolName"):
                     algorithm_key = [k for k, v in server_pools_algorithm_names.iteritems() if
                                      server_farm_pool == v.get("ltmPoolName")]
-                    server_farm.algorithm = server_pools_algorithm.get(algorithm_key[0]).get("ltmPoolLbMode").replace(
+                    server_farm.algorithm = server_pools_algorithm.get(algorithm_key[0]).get(
+                        "ltmPoolLbMode").replace(
                         "'", "")
                     server_node = server_pools_members.get(servers_pool_id).get("ltmPoolMemberStatNodeName")
-                    server_node_id = [k for k, v in servers_names.iteritems() if
-                                      server_node == v.get("ltmNodeAddrName")][0]
-                    if server_node_id:
-                        self.pool_servers_dict.setdefault(server_farm, []).append(
-                            {server_node_id: servers_names.get(server_node_id, {}).get("ltmNodeAddrName")})
-
-    def _get_real_servers(self):
-        servers_addresses = self.snmp_handler.get_table("F5-BIGIP-LOCAL-MIB", "ltmNodeAddrAddr")
-        servers_addresses_type = self.snmp_handler.get_table("F5-BIGIP-LOCAL-MIB", "ltmNodeAddrAddrType")
-        servers_monitors = self.snmp_handler.get_table("F5-BIGIP-LOCAL-MIB", "ltmNodeAddrAddrType")
-        for farm_idx, (server_farm, server_pool) in enumerate(self.pool_servers_dict.iteritems()):
-            for server_idx, server in enumerate(server_pool):
-                for server_id, name in server.iteritems():
-                    unique_id = "{}.{}.{}.{}".format(self.resource_name, "real_server", farm_idx, server_idx)
-                    real_server = F5RealServer(name="Real Server {}".format(name.strip("/").replace("/", "_")),
-                                                    shell_name=self.shell_name,
-                                                    unique_id=unique_id)
-                    real_server.address = self._get_ip_address(servers_addresses.get(server_id, {}).get("ltmNodeAddrAddr"),
-                                                               servers_addresses_type.get(server_id, {}).get(
-                                                                   "ltmNodeAddrAddrType"))
-                    real_server.monitors = servers_monitors.get(server_id, {}).get("ltmNodeAddrMonitorRule")
-                    server_farm.add_sub_resource("1", real_server)
+                    server_id = [k for k, v in servers_names.iteritems() if server_node == v.get("ltmNodeAddrName")][0]
+                    if server_id:
+                        server_name = servers_names.get(server_id, {}).get("ltmNodeAddrName")
+                        unique_id = "{}.{}.{}.{}".format(self.resource_name, "real_server", farm_idx, server_idx)
+                        real_server = F5RealServer(
+                            name="Real Server {}".format(server_name.strip("/").replace("/", "_")),
+                            shell_name=self.shell_name,
+                            unique_id=unique_id)
+                        real_server.address = self._get_ip_address(
+                            servers_addresses.get(server_id, {}).get("ltmNodeAddrAddr"),
+                            servers_addresses_type.get(server_id, {}).get(
+                                "ltmNodeAddrAddrType"))
+                        real_server.monitors = servers_monitors.get(server_id, {}).get("ltmNodeAddrMonitorRule")
+                        server_farm.add_sub_resource(server_idx, real_server)
 
     def _get_ports(self):
         """Get resource details and attributes for every port in self.port_list
