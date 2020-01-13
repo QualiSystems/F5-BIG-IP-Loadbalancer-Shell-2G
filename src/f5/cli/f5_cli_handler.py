@@ -39,12 +39,6 @@ class F5CliHandler(CliHandlerImpl):
                               self.password,
                               console_port,
                               self.on_session_start),
-                TelnetSession(self.resource_config.console_server_ip_address,
-                              self.username,
-                              self.password,
-                              console_port,
-                              self.on_session_start,
-                              start_with_new_line=True)
                 ]
 
     def _new_sessions(self):
