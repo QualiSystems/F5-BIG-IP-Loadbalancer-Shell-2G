@@ -1,1 +1,2 @@
-cloudshell-networking-devices>=2.3,<2.4
+cloudshell-networking-devices>=2.8,<2.9
+cloudshell-f5>=1.1,<1.2
