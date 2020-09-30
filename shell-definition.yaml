@@ -1,7 +1,7 @@
 tosca_definitions_version: tosca_simple_yaml_1_0
 
 metadata:
-  template_name: F5BigIpLoadbalancerShell2G
+  template_name: F5 BIG-IP Loadbalancer Shell 2G
   template_author: Quali
   template_version: 1.0.1
   template_icon: shell-icon.png
@@ -13,7 +13,7 @@ imports:
   - cloudshell_standard: cloudshell_loadbalancer_standard_1_0_0.yaml
 
 node_types:
-  vendor.loadbalancer.F5 BigIp LB Shell 2G:
+  vendor.loadbalancer.F5 BIG-IP Loadbalancer 2G:
     derived_from: cloudshell.nodes.LoadBalancer
     properties:
       GenericRealServer.Monitors:
