@@ -74,8 +74,8 @@ The shell comprises:
 
 |File name|Description|
 |:---|:---|
-|F5BigIpLoadbalancerShell2G.zip|Device shell package|
-|cloudshell-loadbalancer-f5-bigip-dependencies-package-1.0.x.zip|Shell Python dependencies (for offline deployments only)|
+|F5.BIG-IP.Loadbalancer.Shell.2G.zip|Device shell package|
+|F5.BIG-IP.Loadbalancer.Shell.2G.offline_dependencies.zip|Shell Python dependencies (for offline deployments only)|
 
 # Importing and Configuring the Shell
 This section describes how to import the **F5 BIG-IP Loadbalancer Shell 2G** shell and configure and modify the shell’s devices.
