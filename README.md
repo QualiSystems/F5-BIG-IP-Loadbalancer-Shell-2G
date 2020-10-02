@@ -4,7 +4,7 @@
 
 Release date: January 2020
 
-`Shell version: 1.0.0`
+`Shell version: 1.1.0`
 
 `Document version: 1.0`
 
@@ -149,7 +149,7 @@ You can also modify existing resources, see [Managing Resources in the Inventory
   1. In the CloudShell Portal, in the **Inventory** dashboard, click **Add New**. 
      ![Image][2]
      
-  2. From the list, select **F5 BIG-IP Loadbalancer Shell 2G**.
+  2. From the list, select **F5 BIG IP Loadbalancer Shell 2G**.
   
   3. Enter the **Name** and **IP address** of the device.
   
