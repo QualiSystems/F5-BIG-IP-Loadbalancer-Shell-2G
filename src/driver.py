@@ -18,7 +18,7 @@ from f5.load_balancing.runners.autoload import F5LoadBalancerAutoloadRunner
 
 class F5BigIpLoadbalancerShell2GDriver(ResourceDriverInterface, GlobalLock):
     SUPPORTED_OS = ["BIG[ -]?IP"]
-    SHELL_NAME = "F5 BIG-IP Loadbalancer 2G"
+    SHELL_NAME = "F5 BIG IP Loadbalancer 2G"
 
     def __init__(self):
         super(F5BigIpLoadbalancerShell2GDriver, self).__init__()
