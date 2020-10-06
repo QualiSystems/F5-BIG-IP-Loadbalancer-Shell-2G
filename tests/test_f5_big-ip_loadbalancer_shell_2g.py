@@ -1,17 +1,7 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
-"""
-Tests for `F5BigIpLoadbalancerShell2GDriver`
-"""
-
 import unittest
-
-from driver import F5BigIpLoadbalancerShell2GDriver
 
 
 class TestF5BigIpLoadbalancerShell2GDriver(unittest.TestCase):
-
     def setUp(self):
         pass
 
@@ -22,6 +12,7 @@ class TestF5BigIpLoadbalancerShell2GDriver(unittest.TestCase):
         pass
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import sys
+
     sys.exit(unittest.main())

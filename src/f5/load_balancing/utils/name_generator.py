@@ -3,7 +3,7 @@ class UniqueNameGenerator(object):
         self._used_names = []
 
     def get_unique_name(self, name):
-        """
+        """Get unique name.
 
         :param str name:
         :return:
