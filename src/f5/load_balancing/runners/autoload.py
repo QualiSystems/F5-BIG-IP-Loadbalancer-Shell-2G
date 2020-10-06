@@ -6,8 +6,6 @@ from f5.load_balancing.flows.autoload import F5LoadBalancerSnmpAutoloadFlow
 class F5LoadBalancerAutoloadRunner(AbstractF5AutoloadRunner):
     @property
     def autoload_flow(self):
-        """
-
-        :return:
-        """
-        return F5LoadBalancerSnmpAutoloadFlow(snmp_handler=self.snmp_handler, logger=self._logger)
+        return F5LoadBalancerSnmpAutoloadFlow(
+            snmp_handler=self.snmp_handler, logger=self._logger
+        )
