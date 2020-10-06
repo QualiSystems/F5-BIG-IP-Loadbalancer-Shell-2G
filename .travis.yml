@@ -37,20 +37,20 @@ jobs:
         target_commitish: master
         on:
           branch: master
-    - stage: Check version
-      before_install:
-        - sudo apt-get update
-        - sudo apt-get -y install jq
-      install:
-        - pip install yq
-        - git clone https://github.com/$TRAVIS_REPO_SLUG.git $TRAVIS_REPO_SLUG
-        - cd $TRAVIS_REPO_SLUG
-        - git checkout -qf $TRAVIS_PULL_REQUEST_BRANCH
-      script: "! diff <(yq .metadata.template_version shell-definition.yaml) <(git show master:shell-definition.yaml > tmp.yaml && yq .metadata.template_version tmp.yaml)"
+#    - stage: Check version
+#      before_install:
+#        - sudo apt-get update
+#        - sudo apt-get -y install jq
+#      install:
+#        - pip install yq
+#        - git clone https://github.com/$TRAVIS_REPO_SLUG.git $TRAVIS_REPO_SLUG
+#        - cd $TRAVIS_REPO_SLUG
+#        - git checkout -qf $TRAVIS_PULL_REQUEST_BRANCH
+#      script: "! diff <(yq .metadata.template_version shell-definition.yaml) <(git show master:shell-definition.yaml > tmp.yaml && yq .metadata.template_version tmp.yaml)"
 
 stages:
-  - name: Check version
-    if: branch = master AND type = pull_request
+#  - name: Check version
+#    if: branch = master AND type = pull_request
   - name: Test
   - name: Create GitHub release
     if: branch = master AND type != pull_request
