@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/QualiSystems/F5-BIG-IP-Loadbalancer-Shell-2G.svg?branch=master)](https://travis-ci.org/QualiSystems/F5-BIG-IP-Loadbalancer-Shell-2G)
+[![codecov](https://codecov.io/gh/QualiSystems/F5-BIG-IP-Loadbalancer-Shell-2G/branch/master/graph/badge.svg)](https://codecov.io/gh/QualiSystems/F5-BIG-IP-Loadbalancer-Shell-2G)
 ![Image][1]
 
 # **F5 BIG-IP Loadbalancer Shell 2G**
