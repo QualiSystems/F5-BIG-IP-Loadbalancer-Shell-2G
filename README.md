@@ -7,7 +7,7 @@
 
 Release date: January 2020
 
-`Shell version: 1.1.0`
+`Shell version: 1.1.1`
 
 `Document version: 1.0`
 
