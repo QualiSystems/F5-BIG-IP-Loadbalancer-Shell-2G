@@ -1,456 +1,347 @@
-from cloudshell.core.context.error_handling_context import ErrorHandlingContext
-from cloudshell.devices.driver_helper import (
-    get_api,
-    get_cli,
-    get_logger_with_thread_id,
-    parse_custom_commands,
-)
-from cloudshell.devices.runners.run_command_runner import RunCommandRunner
-from cloudshell.devices.runners.state_runner import StateRunner
-from cloudshell.devices.standards.load_balancing.configuration_attributes_structure import (  # noqa: E501
-    create_load_balancing_resource_from_context,
-)
-from cloudshell.f5.cli.f5_cli_handler import F5CliHandler
-from cloudshell.f5.runners.f5_configuration_runner import F5ConfigurationRunner
-from cloudshell.f5.runners.f5_firmware_runner import F5FirmwareRunner
-from cloudshell.f5.snmp.f5_snmp_handler import F5SnmpHandler
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from cloudshell.cli.service.cli import CLI
+from cloudshell.cli.service.session_pool_manager import SessionPoolManager
 from cloudshell.shell.core.driver_utils import GlobalLock
+from cloudshell.shell.core.orchestration_save_restore import OrchestrationSaveRestore
 from cloudshell.shell.core.resource_driver_interface import ResourceDriverInterface
+from cloudshell.shell.core.session.cloudshell_session import CloudShellSessionContext
+from cloudshell.shell.core.session.logging_session import LoggingSessionContext
+from cloudshell.shell.flows.command.basic_flow import RunCommandFlow
+from cloudshell.shell.standards.load_balancer.autoload_model import (
+    LoadBalancerResourceModel,
+)
+from cloudshell.shell.standards.load_balancer.driver_interface import (
+    LoadBalancerResourceDriverInterface,
+)
+from cloudshell.shell.standards.load_balancer.resource_config import (
+    LoadBalancerResourceConfig,
+)
+from cloudshell.snmp.snmp_configurator import EnableDisableSnmpConfigurator
 
-from f5.load_balancing.runners.autoload import F5LoadBalancerAutoloadRunner
+from cloudshell.f5.cli.f5_cli_configurator import F5CliConfigurator
+from cloudshell.f5.flows.f5_autoload_flow import BigIPAutoloadFlow
+from cloudshell.f5.flows.f5_configuration_flow import F5ConfigurationFlow
+from cloudshell.f5.flows.f5_enable_disable_snmp_flow import F5EnableDisableSnmpFlow
+from cloudshell.f5.flows.f5_state_flow import F5StateFlow
+
+if TYPE_CHECKING:
+    from cloudshell.shell.core.driver_context import (
+        AutoLoadCommandContext,
+        AutoLoadDetails,
+        InitCommandContext,
+        ResourceCommandContext,
+    )
 
 
-class F5BigIpLoadbalancerShell2GDriver(ResourceDriverInterface, GlobalLock):
+class F5BigIPLoadBalancerShell2GDriver(
+    ResourceDriverInterface, LoadBalancerResourceDriverInterface
+):
     SUPPORTED_OS = ["BIG[ -]?IP"]
     SHELL_NAME = "F5 BIG IP Loadbalancer 2G"
 
     def __init__(self):
-        super(F5BigIpLoadbalancerShell2GDriver, self).__init__()
         self._cli = None
 
-    def initialize(self, context):
+    def initialize(self, context: InitCommandContext) -> str:
         """Initialize the driver session.
 
-        :param InitCommandContext context: the context the command runs on
-        :rtype: str
+        :param context: the context the command runs on
         """
-        resource_config = create_load_balancing_resource_from_context(
-            shell_name=self.SHELL_NAME, supported_os=self.SUPPORTED_OS, context=context
+        resource_config = LoadBalancerResourceConfig.from_context(
+            self.SHELL_NAME, context
         )
-
         session_pool_size = int(resource_config.sessions_concurrency_limit)
-        self._cli = get_cli(session_pool_size)
+        self._cli = CLI(
+            SessionPoolManager(max_pool_size=session_pool_size, pool_timeout=100)
+        )
         return "Finished initializing"
 
     @GlobalLock.lock
-    def get_inventory(self, context):
-        """Discovers the resource structure and attributes.
+    def get_inventory(self, context: AutoLoadCommandContext) -> AutoLoadDetails:
+        """Return device structure with all standard attributes.
 
-        :param AutoLoadCommandContext context: the context the command runs on
-        :return Attribute and sub-resource information for the Shell resource
-        :rtype: AutoLoadDetails
+        :param context: ResourceCommandContext object with all
+          Resource Attributes inside
         """
-        logger = get_logger_with_thread_id(context)
-        logger.info("Autoload command started")
+        with LoggingSessionContext(context) as logger:
+            api = CloudShellSessionContext(context).get_api()
 
-        with ErrorHandlingContext(logger):
-            resource_config = create_load_balancing_resource_from_context(
-                shell_name=self.SHELL_NAME,
-                supported_os=self.SUPPORTED_OS,
-                context=context,
-            )
-            cs_api = get_api(context)
-            cli_handler = F5CliHandler(
-                cli=self._cli,
-                resource_config=resource_config,
-                api=cs_api,
-                logger=logger,
+            resource_config = LoadBalancerResourceConfig.from_context(
+                self.SHELL_NAME, context, api, self.SUPPORTED_OS
             )
 
-            snmp_handler = F5SnmpHandler(
-                cli_handler=cli_handler,
-                resource_config=resource_config,
-                api=cs_api,
-                logger=logger,
+            cli_configurator = F5CliConfigurator(self._cli, resource_config, logger)
+            enable_disable_snmp_flow = F5EnableDisableSnmpFlow(cli_configurator, logger)
+            snmp_configurator = EnableDisableSnmpConfigurator(
+                enable_disable_snmp_flow, resource_config, logger
             )
 
-            autoload_operations = F5LoadBalancerAutoloadRunner(
-                logger=logger,
-                resource_config=resource_config,
-                snmp_handler=snmp_handler,
+            resource_model = LoadBalancerResourceModel.from_resource_config(
+                resource_config
             )
 
-            autoload_details = autoload_operations.discover()
-            logger.info("Autoload command completed")
+            autoload_operations = BigIPAutoloadFlow(snmp_configurator, logger)
+            logger.info("Autoload started")
+            response = autoload_operations.discover(self.SUPPORTED_OS, resource_model)
+            logger.info("Autoload completed")
+            return response
 
-            return autoload_details
-
-    def run_custom_command(self, context, custom_command):
+    def run_custom_command(
+        self, context: ResourceCommandContext, custom_command: str
+    ) -> str:
         """Executes a custom command on the device.
 
-        :param ResourceCommandContext context: The context object for
-         the command with resource and reservation info
-        :param str custom_command: The command to run
+        :param context: The context object
+         for the command with resource and reservation info
+        :param custom_command: The command to run
         :return: the command result text
-        :rtype: str
         """
-        logger = get_logger_with_thread_id(context)
-        logger.info("Run custom command started")
+        with LoggingSessionContext(context) as logger:
+            api = CloudShellSessionContext(context).get_api()
 
-        with ErrorHandlingContext(logger):
-            resource_config = create_load_balancing_resource_from_context(
-                shell_name=self.SHELL_NAME,
-                supported_os=self.SUPPORTED_OS,
-                context=context,
+            resource_config = LoadBalancerResourceConfig.from_context(
+                self.SHELL_NAME,
+                context,
+                api,
+                self.SUPPORTED_OS,
             )
-            cs_api = get_api(context)
-            cli_handler = F5CliHandler(
-                cli=self._cli,
-                resource_config=resource_config,
-                api=cs_api,
-                logger=logger,
-            )
+            cli_configurator = F5CliConfigurator(self._cli, resource_config, logger)
 
-            send_command_operations = RunCommandRunner(
-                logger=logger, cli_handler=cli_handler
-            )
-
-            response = send_command_operations.run_custom_command(
-                custom_command=parse_custom_commands(custom_command)
-            )
-            logger.info("Run custom command ended with response: {}".format(response))
-
+            send_command_operations = RunCommandFlow(logger, cli_configurator)
+            response = send_command_operations.run_custom_command(custom_command)
             return response
 
-    def run_custom_config_command(self, context, custom_command):
+    def run_custom_config_command(
+        self, context: ResourceCommandContext, custom_command: str
+    ) -> str:
         """Executes a custom command on the device in configuration mode.
 
-        :param ResourceCommandContext context: The context object for the
-         command with resource and reservation info
-        :param str custom_command: The command to run
+        :param context: The context object
+         for the command with resource and reservation info
+        :param custom_command: The command to run
         :return: the command result text
-        :rtype: str
         """
-        logger = get_logger_with_thread_id(context)
-        logger.info("Run custom config command started")
+        with LoggingSessionContext(context) as logger:
+            api = CloudShellSessionContext(context).get_api()
 
-        with ErrorHandlingContext(logger):
-            resource_config = create_load_balancing_resource_from_context(
-                shell_name=self.SHELL_NAME,
-                supported_os=self.SUPPORTED_OS,
-                context=context,
+            resource_config = LoadBalancerResourceConfig.from_context(
+                self.SHELL_NAME,
+                context,
+                api,
+                self.SUPPORTED_OS,
             )
-            cs_api = get_api(context)
-            cli_handler = F5CliHandler(
-                cli=self._cli,
-                resource_config=resource_config,
-                api=cs_api,
-                logger=logger,
+            cli_configurator = F5CliConfigurator(self._cli, resource_config, logger)
+
+            send_command_operations = RunCommandFlow(logger, cli_configurator)
+            result_str = send_command_operations.run_custom_config_command(
+                custom_command
             )
+            return result_str
 
-            send_command_operations = RunCommandRunner(
-                logger=logger, cli_handler=cli_handler
-            )
-
-            response = send_command_operations.run_custom_config_command(
-                custom_command=parse_custom_commands(custom_command)
-            )
-
-            logger.info(
-                "Run custom config command ended with response: {}".format(response)
-            )
-
-            return response
-
-    def health_check(self, context):
-        """Checks if the device is up and connectable.
-
-        :param ResourceCommandContext context: ResourceCommandContext object
-         with all Resource Attributes inside
-        :return: Success or fail message
-        :rtype: str
-        """
-        logger = get_logger_with_thread_id(context)
-        logger.info("Health check command started")
-
-        with ErrorHandlingContext(logger):
-            resource_config = create_load_balancing_resource_from_context(
-                shell_name=self.SHELL_NAME,
-                supported_os=self.SUPPORTED_OS,
-                context=context,
-            )
-            cs_api = get_api(context)
-
-            cli_handler = F5CliHandler(
-                cli=self._cli,
-                resource_config=resource_config,
-                api=cs_api,
-                logger=logger,
-            )
-
-            state_operations = StateRunner(
-                logger=logger,
-                api=cs_api,
-                resource_config=resource_config,
-                cli_handler=cli_handler,
-            )
-
-            response = state_operations.health_check()
-            logger.info("Health check command ended with response: {}".format(response))
-
-            return response
-
-    def cleanup(self):
-        pass
-
-    def save(self, context, folder_path, configuration_type):
+    def save(
+        self,
+        context: ResourceCommandContext,
+        folder_path: str,
+        configuration_type: str,
+        vrf_management_name: str,
+    ) -> str:
         """Save a configuration file to the provided destination.
 
-        :param ResourceCommandContext context: The context object for the
-         command with resource and reservation info
-        :param str folder_path: The path to the folder in which the configuration
+        :param context: The context object
+         for the command with resource and reservation info
+        :param folder_path: The path to the folder in which the configuration
          file will be saved
-        :param str configuration_type: startup or running config
+        :param configuration_type: startup or running config
         :return The configuration file name
-        :rtype: str
         """
-        logger = get_logger_with_thread_id(context)
-        logger.info("Save command started")
+        with LoggingSessionContext(context) as logger:
+            api = CloudShellSessionContext(context).get_api()
 
-        with ErrorHandlingContext(logger):
-            resource_config = create_load_balancing_resource_from_context(
-                shell_name=self.SHELL_NAME,
-                supported_os=self.SUPPORTED_OS,
-                context=context,
+            resource_config = LoadBalancerResourceConfig.from_context(
+                self.SHELL_NAME,
+                context,
+                api,
+                self.SUPPORTED_OS,
             )
-            cs_api = get_api(context)
-            configuration_type = configuration_type or "running"
+            cli_configurator = F5CliConfigurator(self._cli, resource_config, logger)
 
-            cli_handler = F5CliHandler(
-                cli=self._cli,
-                resource_config=resource_config,
-                api=cs_api,
-                logger=logger,
+            configuration_operations = F5ConfigurationFlow(
+                resource_config, logger, cli_configurator
             )
-
-            configuration_operations = F5ConfigurationRunner(
-                cli_handler=cli_handler,
-                logger=logger,
-                resource_config=resource_config,
-                api=cs_api,
-            )
-            logger.info("Saving started... ")
+            logger.info("Save started")
             response = configuration_operations.save(
-                folder_path=folder_path, configuration_type=configuration_type
+                folder_path=folder_path,
+                configuration_type=configuration_type,
+                vrf_management_name=vrf_management_name,
             )
-            logger.info("Save command completed")
-
+            logger.info("Save completed")
             return response
 
     @GlobalLock.lock
-    def restore(self, context, path, configuration_type, restore_method):
+    def restore(
+        self,
+        context: ResourceCommandContext,
+        path: str,
+        configuration_type: str,
+        restore_method: str,
+        vrf_management_name: str,
+    ) -> None:
         """Restores a configuration file.
 
-        :param ResourceCommandContext context: The context object for the
-         command with resource and reservation info
-        :param str path: The path to the configuration file, including
-         the configuration file name
-        :param str restore_method: Determines whether the restore
-         should append or override the current configuration
-        :param str configuration_type: Specify whether the file should update
+        :param context: The context object for the command
+         with resource and reservation info
+        :param path: The path to the configuration file, including the
+         configuration file name
+        :param restore_method: Determines whether the restore should append or
+         override the current configuration
+        :param configuration_type: Specify whether the file should update
          the startup or running config
         """
-        logger = get_logger_with_thread_id(context)
-        logger.info("Restore command started")
+        with LoggingSessionContext(context) as logger:
+            api = CloudShellSessionContext(context).get_api()
 
-        with ErrorHandlingContext(logger):
-            resource_config = create_load_balancing_resource_from_context(
-                shell_name=self.SHELL_NAME,
-                supported_os=self.SUPPORTED_OS,
-                context=context,
+            resource_config = LoadBalancerResourceConfig.from_context(
+                self.SHELL_NAME,
+                context,
+                api,
+                self.SUPPORTED_OS,
             )
-            cs_api = get_api(context)
-            configuration_type = configuration_type or "running"
-            restore_method = restore_method or "override"
+            cli_configurator = F5CliConfigurator(self._cli, resource_config, logger)
 
-            cli_handler = F5CliHandler(
-                cli=self._cli,
-                resource_config=resource_config,
-                api=cs_api,
-                logger=logger,
+            configuration_operations = F5ConfigurationFlow(
+                resource_config, logger, cli_configurator
             )
-
-            configuration_operations = F5ConfigurationRunner(
-                cli_handler=cli_handler,
-                logger=logger,
-                resource_config=resource_config,
-                api=cs_api,
-            )
-            logger.info("Restoring started...")
+            logger.info("Restore started")
             configuration_operations.restore(
                 path=path,
                 restore_method=restore_method,
                 configuration_type=configuration_type,
+                vrf_management_name=vrf_management_name,
             )
+            logger.info("Restore completed")
 
-            logger.info("Restore command completed")
+    def shutdown(self, context: ResourceCommandContext) -> str:
+        """Sends a graceful shutdown to the device.
 
-    def orchestration_save(self, context, mode, custom_params):
+        :param context: The context object
+         for the command with resource and reservation info
+        """
+        with LoggingSessionContext(context) as logger:
+            api = CloudShellSessionContext(context).get_api()
+
+            resource_config = LoadBalancerResourceConfig.from_context(
+                self.SHELL_NAME,
+                context,
+                api,
+                self.SUPPORTED_OS,
+            )
+            cli_configurator = F5CliConfigurator(self._cli, resource_config, logger)
+
+            state_operations = F5StateFlow(
+                logger, resource_config, cli_configurator, api
+            )
+            return state_operations.shutdown()
+
+    def orchestration_save(
+        self, context: ResourceCommandContext, mode: str, custom_params: str
+    ) -> str:
         """Saves the Shell state and returns a description of the saved artifacts.
 
         This command is intended for API use only by sandbox orchestration
         scripts to implement a save and restore workflow
-        :param ResourceCommandContext context: the context object containing
+        :param context: the context object containing
          resource and reservation info
-        :param str mode: Snapshot save mode, can be one of two values
+        :param mode: Snapshot save mode, can be one of two values
          'shallow' (default) or 'deep'
-        :param str custom_params: Set of custom parameters for the save operation
+        :param custom_params: Set of custom parameters for the save operation
         :return: SavedResults serialized as JSON
-        :rtype: OrchestrationSaveResult
         """
-        logger = get_logger_with_thread_id(context)
-        logger.info("Orchestration save command started")
+        with LoggingSessionContext(context) as logger:
+            api = CloudShellSessionContext(context).get_api()
 
-        with ErrorHandlingContext(logger):
-            resource_config = create_load_balancing_resource_from_context(
-                shell_name=self.SHELL_NAME,
-                supported_os=self.SUPPORTED_OS,
-                context=context,
+            resource_config = LoadBalancerResourceConfig.from_context(
+                self.SHELL_NAME,
+                context,
+                api,
+                self.SUPPORTED_OS,
             )
-            cs_api = get_api(context)
-            mode = mode or "shallow"
-            cli_handler = F5CliHandler(
-                cli=self._cli,
-                resource_config=resource_config,
-                api=cs_api,
-                logger=logger,
+            cli_configurator = F5CliConfigurator(self._cli, resource_config, logger)
+
+            configuration_operations = F5ConfigurationFlow(
+                resource_config, logger, cli_configurator
             )
 
-            configuration_operations = F5ConfigurationRunner(
-                cli_handler=cli_handler,
-                logger=logger,
-                resource_config=resource_config,
-                api=cs_api,
-            )
+            logger.info("Orchestration save started")
 
             response = configuration_operations.orchestration_save(
                 mode=mode, custom_params=custom_params
             )
-            logger.info(
-                "Orchestration save command completed with response: {}".format(
-                    response
-                )
-            )
-
-            return response
+            response_json = OrchestrationSaveRestore(
+                logger, resource_config.name
+            ).prepare_orchestration_save_result(response)
+            logger.info("Orchestration save completed")
+            return response_json
 
     def orchestration_restore(self, context, saved_artifact_info, custom_params):
         """Restores a saved artifact previously saved by this Shell.
 
-        :param ResourceCommandContext context: The context object for the
-         command with resource and reservation info
-        :param str saved_artifact_info: A JSON string representing the state to
-         restore including saved artifacts and info
-        :param str custom_params: Set of custom parameters for the restore operation
-        """
-        logger = get_logger_with_thread_id(context)
-        logger.info("Orchestration restore command started")
-
-        with ErrorHandlingContext(logger):
-            resource_config = create_load_balancing_resource_from_context(
-                shell_name=self.SHELL_NAME,
-                supported_os=self.SUPPORTED_OS,
-                context=context,
-            )
-            cs_api = get_api(context)
-            cli_handler = F5CliHandler(
-                cli=self._cli,
-                resource_config=resource_config,
-                api=cs_api,
-                logger=logger,
-            )
-
-            configuration_operations = F5ConfigurationRunner(
-                cli_handler=cli_handler,
-                logger=logger,
-                resource_config=resource_config,
-                api=cs_api,
-            )
-
-            configuration_operations.orchestration_restore(
-                saved_artifact_info=saved_artifact_info, custom_params=custom_params
-            )
-
-            logger.info("Orchestration restore command completed")
-
-    @GlobalLock.lock
-    def load_firmware(self, context, path):
-        """Upload and updates firmware on the resource.
-
-        :param ResourceCommandContext context: The context object for the
-         command with resource and reservation info
-        :param str path: path to tftp server where firmware file is stored
-        """
-        logger = get_logger_with_thread_id(context)
-        logger.info("Load firmware command started")
-
-        with ErrorHandlingContext(logger):
-            resource_config = create_load_balancing_resource_from_context(
-                shell_name=self.SHELL_NAME,
-                supported_os=self.SUPPORTED_OS,
-                context=context,
-            )
-            cs_api = get_api(context)
-            cli_handler = F5CliHandler(
-                cli=self._cli,
-                resource_config=resource_config,
-                api=cs_api,
-                logger=logger,
-            )
-
-            logger.info("Start Loading Firmware...")
-            firmware_operations = F5FirmwareRunner(
-                cli_handler=cli_handler, logger=logger
-            )
-
-            response = firmware_operations.load_firmware(path=path)
-            logger.info(
-                "Load firmware command completed with response: {}".format(response)
-            )
-
-            return response
-
-    def shutdown(self, context):
-        """Sends a graceful shutdown to the device.
-
         :param ResourceCommandContext context: The context object
          for the command with resource and reservation info
+        :param str saved_artifact_info: A JSON string representing the state
+         to restore including saved artifacts and info
+        :param str custom_params: Set of custom parameters for the restore operation
         """
-        logger = get_logger_with_thread_id(context)
-        logger.info("Shutdown command started")
+        with LoggingSessionContext(context) as logger:
+            api = CloudShellSessionContext(context).get_api()
 
-        with ErrorHandlingContext(logger):
-            resource_config = create_load_balancing_resource_from_context(
-                shell_name=self.SHELL_NAME,
-                supported_os=self.SUPPORTED_OS,
-                context=context,
+            resource_config = LoadBalancerResourceConfig.from_context(
+                self.SHELL_NAME,
+                context,
+                api,
+                self.SUPPORTED_OS,
             )
-            cs_api = get_api(context)
-            cli_handler = F5CliHandler(
-                cli=self._cli,
-                resource_config=resource_config,
-                api=cs_api,
-                logger=logger,
+            cli_configurator = F5CliConfigurator(self._cli, resource_config, logger)
+
+            flow = F5ConfigurationFlow(resource_config, logger, cli_configurator)
+
+            restore_params = OrchestrationSaveRestore(
+                logger, resource_config.name
+            ).parse_orchestration_save_result(saved_artifact_info)
+
+            logger.info("Orchestration restore started")
+            flow.restore(**restore_params)
+            logger.info("Orchestration restore completed")
+
+    def health_check(self, context: ResourceCommandContext) -> str:
+        """Checks if the device is up and connectable.
+
+        :param context: ResourceCommandContext object
+         with all Resource Attributes inside
+        :return: Success or fail message
+        """
+        with LoggingSessionContext(context) as logger:
+            api = CloudShellSessionContext(context).get_api()
+
+            resource_config = LoadBalancerResourceConfig.from_context(
+                self.SHELL_NAME,
+                context,
+                api,
+                self.SUPPORTED_OS,
             )
+            cli_configurator = F5CliConfigurator(self._cli, resource_config, logger)
 
-            state_operations = StateRunner(
-                logger=logger,
-                api=cs_api,
-                resource_config=resource_config,
-                cli_handler=cli_handler,
+            state_operations = F5StateFlow(
+                logger, resource_config, cli_configurator, api
             )
+            return state_operations.health_check()
 
-            response = state_operations.shutdown()
-            logger.info("Shutdown command completed with response: {}".format(response))
+    def cleanup(self):
+        """Destroy the driver session.
 
-            return response
+        This function is called everytime a driver instance is destroyed.
+        This is a good place to close any open sessions, finish writing to log files
+        """
+        pass

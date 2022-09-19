@@ -1,2 +1,3 @@
-cloudshell-networking-devices>=2.8,<2.9
-cloudshell-f5>=1.1,<1.2
+cloudshell-shell-load-balancer-standard~=1.0.0
+cloudshell-shell-core~=5.1
+cloudshell-f5~=2.0.0
